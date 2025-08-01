@@ -14,7 +14,7 @@ import threading
 # Page configuration
 st.set_page_config(
     page_title="Battery Cell Management System",
-    page_icon="🔋",
+    
     layout="wide",
     initial_sidebar_state="expanded"
 )
