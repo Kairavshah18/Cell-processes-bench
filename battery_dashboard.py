@@ -194,6 +194,41 @@ def cell_configuration_tab():
         # Number of cells input
         num_cells = st.number_input("Number of cells to add", min_value=1, max_value=20, value=1)
         
+        # Quick add with random data
+        st.subheader("Quick Add with Random Data")
+        with st.form("quick_add_form"):
+            cell_types_quick = []
+            for i in range(num_cells):
+                cell_type = st.selectbox(f"Cell {i+1} Type", ["LFP", "Li-ion", "NMC", "LTO"], key=f"quick_type_{i}")
+                cell_types_quick.append(cell_type)
+            
+            if st.form_submit_button("Add Cells with Random Data", use_container_width=True):
+                for i, cell_type in enumerate(cell_types_quick):
+                    cell_key = f"cell_{len(st.session_state.cells_data)+1}_{cell_type.lower()}"
+                    random_data = randomize_cell_data(cell_type)
+                    
+                    # Set voltage limits based on cell type
+                    if cell_type.lower() == "lfp":
+                        min_voltage, max_voltage = 2.8, 3.6
+                    else:
+                        min_voltage, max_voltage = 3.2, 4.0
+                    
+                    st.session_state.cells_data[cell_key] = {
+                        "type": cell_type,
+                        "voltage": random_data["voltage"],
+                        "current": random_data["current"],
+                        "temp": random_data["temp"],
+                        "capacity": random_data["capacity"],
+                        "min_voltage": min_voltage,
+                        "max_voltage": max_voltage
+                    }
+                
+                st.success(f"Added {len(cell_types_quick)} cells with random data!")
+                st.rerun()
+        
+        st.markdown("---")
+        st.subheader("Manual Cell Configuration")
+        
         # Cell configuration form
         with st.form("cell_config_form"):
             cells_to_add = []
@@ -221,13 +256,7 @@ def cell_configuration_tab():
                 
                 st.markdown("---")
             
-            col_submit, col_random = st.columns(2)
-            with col_submit:
-                submit_cells = st.form_submit_button("Add Cells", use_container_width=True)
-            with col_random:
-                randomize_all = st.form_submit_button("Randomize All Data", use_container_width=True)
-            
-            if submit_cells:
+            if st.form_submit_button("Add Cells Manually", use_container_width=True):
                 for i, cell_config in enumerate(cells_to_add):
                     cell_key = f"cell_{len(st.session_state.cells_data)+1}_{cell_config['type'].lower()}"
                     
@@ -248,15 +277,6 @@ def cell_configuration_tab():
                     }
                 
                 st.success(f"Added {len(cells_to_add)} cells successfully!")
-                st.rerun()
-            
-            if randomize_all:
-                for i, cell_config in enumerate(cells_to_add):
-                    random_data = randomize_cell_data(cell_config['type'])
-                    st.session_state[f"voltage_{i}"] = random_data["voltage"]
-                    st.session_state[f"current_{i}"] = random_data["current"]
-                    st.session_state[f"temp_{i}"] = random_data["temp"]
-                    st.session_state[f"capacity_{i}"] = random_data["capacity"]
                 st.rerun()
     
     with col2:
@@ -785,35 +805,40 @@ def export_tab():
                     )
                 
                 elif export_format == "Excel":
-                    # Create Excel file in memory
-                    from io import BytesIO
-                    excel_buffer = BytesIO()
-                    
-                    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                        export_df.to_excel(writer, sheet_name='Simulation_Data', index=False)
+                    try:
+                        # Create Excel file in memory
+                        from io import BytesIO
+                        excel_buffer = BytesIO()
                         
-                        # Add summary sheet
-                        summary_data = {
-                            'Metric': ['Total Records', 'Duration (s)', 'Start Time', 'Export Time'],
-                            'Value': [
-                                len(export_df),
-                                f"{export_df['elapsed'].max():.1f}",
-                                datetime.fromtimestamp(export_df['timestamp'].min()).strftime('%Y-%m-%d %H:%M:%S'),
-                                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            ]
-                        }
-                        pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', index=False)
-                    
-                    excel_data = excel_buffer.getvalue()
-                    file_name = f"battery_simulation_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                    
-                    st.download_button(
-                        label="Download Excel",
-                        data=excel_data,
-                        file_name=file_name,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
+                        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                            export_df.to_excel(writer, sheet_name='Simulation_Data', index=False)
+                            
+                            # Add summary sheet
+                            summary_data = {
+                                'Metric': ['Total Records', 'Duration (s)', 'Start Time', 'Export Time'],
+                                'Value': [
+                                    len(export_df),
+                                    f"{export_df['elapsed'].max():.1f}",
+                                    datetime.fromtimestamp(export_df['timestamp'].min()).strftime('%Y-%m-%d %H:%M:%S'),
+                                    datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                ]
+                            }
+                            pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', index=False)
+                        
+                        excel_data = excel_buffer.getvalue()
+                        file_name = f"battery_simulation_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                        
+                        st.download_button(
+                            label="Download Excel",
+                            data=excel_data,
+                            file_name=file_name,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+                    except ImportError:
+                        st.error("Excel export requires openpyxl. Please install it with: pip install openpyxl")
+                    except Exception as e:
+                        st.error(f"Error creating Excel file: {str(e)}")
                 
                 st.success(f"Export ready! Filtered data contains {len(export_df)} records.")
         
