@@ -14,7 +14,7 @@ import threading
 # Page configuration
 st.set_page_config(
     page_title="Battery Cell Management System",
-    page_icon="🔋",
+    
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -150,7 +150,7 @@ def simulate_task_execution(cell_key, task_data, elapsed_time):
 def main():
     initialize_session_state()
     
-    st.markdown('<h1 class="main-header">🔋 Battery Cell Management System</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">Battery Cell Management System</h1>', unsafe_allow_html=True)
     
     # Sidebar navigation
     with st.sidebar:
