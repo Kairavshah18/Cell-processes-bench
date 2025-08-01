@@ -1,583 +1,429 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import random
-import numpy as np
-from datetime import datetime, timedelta
 import time
-import threading
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
-import io
+from datetime import datetime
+import numpy as np
 
-# Configure page
+# Page configuration
 st.set_page_config(
-    page_title="Battery Cell Testing Bench",
+    page_title="Battery Cell Testing Simulator",
+    page_icon="🔋",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Enhanced CSS for professional dark theme
+# Custom CSS for dark theme
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    .stApp {
-        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #2a2a2a 100%);
-        color: #ffffff;
-        font-family: 'Inter', sans-serif;
+    .main > div {
+        padding-top: 2rem;
     }
     
-    .main .block-container {
-        padding: 1rem 2rem;
-        max-width: 100%;
-    }
-    
-    /* Sidebar styling */
-    .css-1d391kg {
-        background: linear-gradient(180deg, #1e1e1e 0%, #2d2d2d 100%);
-        border-right: 2px solid #3d3d3d;
-    }
-    
-    /* Professional cards */
-    .cell-card {
-        background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
-        border: 1px solid #3d3d3d;
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        transition: all 0.3s ease;
-    }
-    
-    .cell-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-    }
-    
-    /* Status indicators */
-    .status-running {
-        color: #4CAF50;
-        font-weight: 600;
-    }
-    
-    .status-idle {
-        color: #FF9800;
-        font-weight: 600;
-    }
-    
-    .status-stopped {
-        color: #F44336;
-        font-weight: 600;
-    }
-    
-    /* Enhanced buttons */
     .stButton > button {
-        background: linear-gradient(145deg, #4a90e2, #357abd);
+        background: linear-gradient(90deg, #FF6B6B, #4ECDC4);
         color: white;
         border: none;
-        border-radius: 12px;
-        padding: 12px 24px;
-        font-weight: 600;
-        box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+        border-radius: 10px;
+        padding: 0.5rem 1rem;
+        font-weight: bold;
         transition: all 0.3s ease;
-        width: 100%;
     }
     
     .stButton > button:hover {
-        background: linear-gradient(145deg, #357abd, #2968a3);
-        transform: translateY(-1px);
-        box-shadow: 0 6px 16px rgba(74, 144, 226, 0.4);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
     
-    /* Form controls */
-    .stSelectbox > div > div {
-        background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
-        border: 1px solid #3d3d3d;
-        border-radius: 8px;
-    }
-    
-    .stNumberInput > div > div > input {
-        background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
-        border: 1px solid #3d3d3d;
-        border-radius: 8px;
-        color: white;
-    }
-    
-    /* Data tables */
-    .stDataFrame {
-        background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
-        border-radius: 12px;
-        border: 1px solid #3d3d3d;
-    }
-    
-    /* Headers */
-    h1, h2, h3 {
-        background: linear-gradient(135deg, #64b5f6, #42a5f5);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        font-weight: 700;
-    }
-    
-    /* Expander styling */
-    .streamlit-expanderHeader {
-        background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
-        border-radius: 8px;
-        border: 1px solid #3d3d3d;
-    }
-    
-    /* Metrics */
-    .metric-container {
-        background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 1rem;
-        border-radius: 12px;
-        border: 1px solid #3d3d3d;
+        border-radius: 10px;
+        margin: 0.5rem 0;
+        color: white;
         text-align: center;
+    }
+    
+    .cell-status {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .task-config {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 10px;
+        padding: 1rem;
         margin: 0.5rem 0;
     }
     
-    /* Progress indicators */
-    .progress-bar {
-        background: linear-gradient(90deg, #4CAF50, #45a049);
-        height: 8px;
-        border-radius: 4px;
-        transition: width 0.3s ease;
+    .stSelectbox > div > div {
+        background-color: #2e2e2e;
     }
     
-    /* Task status colors */
-    .task-charging { color: #4CAF50; }
-    .task-discharging { color: #F44336; }
-    .task-idle { color: #FF9800; }
+    .stNumberInput > div > div > input {
+        background-color: #2e2e2e;
+        color: white;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Initialize session state
-if 'num_cells' not in st.session_state:
-    st.session_state.num_cells = 2
-if 'cells_config' not in st.session_state:
-    st.session_state.cells_config = {}
-if 'simulation_data' not in st.session_state:
-    st.session_state.simulation_data = pd.DataFrame()
+if 'cells_data' not in st.session_state:
+    st.session_state.cells_data = {}
+if 'tasks_data' not in st.session_state:
+    st.session_state.tasks_data = {}
 if 'simulation_running' not in st.session_state:
     st.session_state.simulation_running = False
-if 'simulation_paused' not in st.session_state:
-    st.session_state.simulation_paused = False
-if 'start_time' not in st.session_state:
-    st.session_state.start_time = None
-if 'cell_states' not in st.session_state:
-    st.session_state.cell_states = {}
+if 'simulation_data' not in st.session_state:
+    st.session_state.simulation_data = pd.DataFrame()
+if 'current_time' not in st.session_state:
+    st.session_state.current_time = 0
 
-class BatteryCell:
-    def __init__(self, cell_id, cell_type):
-        self.cell_id = cell_id
-        self.cell_type = cell_type
-        self.tasks = []
-        self.current_task_index = 0
-        self.task_start_time = 0
-        self.voltage = 3.2 if cell_type == "LFP" else 3.6
-        self.current = 0.0
-        self.is_running = False
-        self.is_completed = False
-        
-    def add_task(self, task_type, duration):
-        self.tasks.append({"type": task_type, "duration": duration})
+def initialize_cell(cell_type, cell_id):
+    """Initialize cell parameters based on type"""
+    if cell_type.lower() == "lfp":
+        voltage = 3.2
+        min_voltage = 2.8
+        max_voltage = 3.6
+    else:  # NMC
+        voltage = 3.6
+        min_voltage = 3.2
+        max_voltage = 4.0
     
-    def get_voltage_range(self, task_type):
-        if self.cell_type == "LFP":
-            ranges = {
-                "CC Charging": (3.2, 3.6),
-                "Discharging": (2.8, 3.2),
-                "Idle": (3.0, 3.4)
-            }
-        else:  # NMC
-            ranges = {
-                "CC Charging": (3.6, 4.2),
-                "Discharging": (3.0, 3.6),
-                "Idle": (3.4, 3.8)
-            }
-        return ranges.get(task_type, (3.0, 4.0))
-    
-    def get_current_range(self, task_type):
-        ranges = {
-            "CC Charging": (1.0, 2.0),
-            "Discharging": (-1.5, -0.5),
-            "Idle": (0.0, 0.0)
-        }
-        return ranges.get(task_type, (0.0, 0.0))
-    
-    def update_values(self, elapsed_time):
-        if not self.tasks or self.is_completed:
-            return
-        
-        current_task = self.tasks[self.current_task_index]
-        task_elapsed = elapsed_time - self.task_start_time
-        
-        # Check if current task is complete
-        if task_elapsed >= current_task["duration"]:
-            self.current_task_index += 1
-            if self.current_task_index >= len(self.tasks):
-                self.is_completed = True
-                self.current = 0.0
-                return
-            
-            self.task_start_time = elapsed_time
-            current_task = self.tasks[self.current_task_index]
-            task_elapsed = 0
-        
-        # Update voltage and current based on current task
-        task_type = current_task["type"]
-        voltage_range = self.get_voltage_range(task_type)
-        current_range = self.get_current_range(task_type)
-        
-        # Simulate gradual changes
-        progress = min(task_elapsed / current_task["duration"], 1.0)
-        
-        if task_type == "CC Charging":
-            self.voltage = voltage_range[0] + (voltage_range[1] - voltage_range[0]) * progress
-            self.current = random.uniform(current_range[0], current_range[1])
-        elif task_type == "Discharging":
-            self.voltage = voltage_range[1] - (voltage_range[1] - voltage_range[0]) * progress
-            self.current = random.uniform(current_range[0], current_range[1])
-        else:  # Idle
-            self.voltage = random.uniform(voltage_range[0], voltage_range[1])
-            self.current = 0.0
-    
-    def get_current_task(self):
-        if self.is_completed or not self.tasks:
-            return "Completed", 0, 0
-        
-        if self.current_task_index < len(self.tasks):
-            task = self.tasks[self.current_task_index]
-            return task["type"], self.current_task_index + 1, len(self.tasks)
-        
-        return "Completed", 0, 0
+    return {
+        "id": cell_id,
+        "type": cell_type,
+        "voltage": voltage,
+        "current": 0.0,
+        "temp": round(random.uniform(25, 40), 1),
+        "capacity": 0.0,
+        "min_voltage": min_voltage,
+        "max_voltage": max_voltage,
+        "current_task": "IDLE",
+        "task_progress": 0
+    }
 
-def initialize_cells():
-    """Initialize cells based on current configuration"""
-    cells = {}
-    for i in range(st.session_state.num_cells):
-        cell_id = f"Cell_{i+1}"
-        if cell_id in st.session_state.cells_config:
-            config = st.session_state.cells_config[cell_id]
-            cell = BatteryCell(cell_id, config["type"])
-            for task in config.get("tasks", []):
-                cell.add_task(task["type"], task["duration"])
-            cells[cell_id] = cell
-    return cells
-
-def simulate_cells():
-    """Run simulation for all cells"""
-    cells = initialize_cells()
-    data_records = []
+def simulate_cell_step(cell_data, task_data, time_step):
+    """Simulate one time step for a cell"""
+    if not task_data:
+        return cell_data
     
-    start_time = time.time()
-    st.session_state.start_time = start_time
+    current_task = task_data.get("task_type", "IDLE")
+    cell_data["current_task"] = current_task
     
-    while st.session_state.simulation_running:
-        if st.session_state.simulation_paused:
-            time.sleep(0.1)
-            continue
-            
-        current_time = time.time()
-        elapsed_time = int(current_time - start_time)
+    # Simulate based on task type
+    if current_task == "CC_CV":
+        # Constant Current, Constant Voltage charging
+        target_voltage = task_data.get("cv_voltage", cell_data["max_voltage"])
+        current = task_data.get("current", 1.0)
         
-        # Update all cells
-        all_completed = True
-        for cell_id, cell in cells.items():
-            if not cell.is_completed:
-                all_completed = False
-                cell.update_values(elapsed_time)
-                
-                # Record data
-                data_records.append({
-                    "Time": elapsed_time,
-                    "Cell_ID": cell_id,
-                    "Voltage": round(cell.voltage, 3),
-                    "Current": round(cell.current, 3),
-                    "Task": cell.get_current_task()[0]
-                })
+        if cell_data["voltage"] < target_voltage:
+            # CC phase - increase voltage
+            voltage_increase = current * 0.01 + random.uniform(-0.01, 0.01)
+            cell_data["voltage"] = min(cell_data["voltage"] + voltage_increase, target_voltage)
+            cell_data["current"] = current + random.uniform(-0.1, 0.1)
+        else:
+            # CV phase - maintain voltage, decrease current
+            cell_data["voltage"] = target_voltage + random.uniform(-0.02, 0.02)
+            cell_data["current"] = max(0.1, cell_data["current"] - 0.05 + random.uniform(-0.02, 0.02))
+    
+    elif current_task == "CC_CD":
+        # Constant Current Discharge
+        current = -abs(task_data.get("current", 1.0))  # Negative for discharge
+        target_voltage = task_data.get("voltage", cell_data["min_voltage"])
         
-        # Update session state
-        st.session_state.cell_states = {
-            cell_id: {
-                "voltage": cell.voltage,
-                "current": cell.current,
-                "task": cell.get_current_task()[0],
-                "task_progress": f"{cell.get_current_task()[1]}/{cell.get_current_task()[2]}",
-                "completed": cell.is_completed
-            }
-            for cell_id, cell in cells.items()
-        }
-        
-        # Update simulation data
-        if data_records:
-            new_data = pd.DataFrame(data_records[-len(cells):])  # Last batch
-            if st.session_state.simulation_data.empty:
-                st.session_state.simulation_data = new_data
-            else:
-                st.session_state.simulation_data = pd.concat([st.session_state.simulation_data, new_data], ignore_index=True)
-        
-        # Check if all cells completed
-        if all_completed:
-            st.session_state.simulation_running = False
-            break
-            
-        time.sleep(1)  # Update every second
-
-# Header
-st.markdown("""
-<div style="text-align: center; padding: 2rem 0;">
-    <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">
-        Battery Cell Testing Bench
-    </h1>
-    <p style="color: #b0bec5; font-size: 1.1rem;">Real-time Battery Testing & Simulation Platform</p>
-</div>
-""", unsafe_allow_html=True)
+        voltage_decrease = abs(current) * 0.01 + random.uniform(-0.01, 0.01)
+        cell_data["voltage"] = max(cell_data["voltage"] - voltage_decrease, target_voltage)
+        cell_data["current"] = current + random.uniform(-0.1, 0.1)
+    
+    else:  # IDLE
+        cell_data["current"] = random.uniform(-0.05, 0.05)
+        cell_data["voltage"] += random.uniform(-0.01, 0.01)
+    
+    # Ensure voltage stays within limits
+    cell_data["voltage"] = max(cell_data["min_voltage"], 
+                              min(cell_data["max_voltage"], cell_data["voltage"]))
+    
+    # Update temperature (varies with current)
+    temp_change = abs(cell_data["current"]) * 0.5 + random.uniform(-0.5, 0.5)
+    cell_data["temp"] = max(20, min(50, cell_data["temp"] + temp_change))
+    
+    # Update capacity
+    cell_data["capacity"] = cell_data["voltage"] * abs(cell_data["current"])
+    
+    return cell_data
 
 # Sidebar Configuration
-with st.sidebar:
-    st.markdown("## 🔧 Configuration")
-    
-    # Number of cells
-    new_num_cells = st.selectbox(
-        "Number of Cells",
-        options=list(range(1, 21)),
-        index=1,
-        key="num_cells_selector"
+st.sidebar.title("🔋 Battery Cell Testing")
+st.sidebar.markdown("---")
+
+# Cell Configuration
+st.sidebar.subheader("Cell Configuration")
+num_cells = st.sidebar.number_input("Number of Cells", min_value=1, max_value=10, value=2)
+
+# Dynamic cell type selection
+for i in range(num_cells):
+    cell_id = f"cell_{i+1}"
+    cell_type = st.sidebar.selectbox(
+        f"Cell {i+1} Type", 
+        ["LFP", "NMC"], 
+        key=f"cell_type_{i}"
     )
     
-    if new_num_cells != st.session_state.num_cells:
-        st.session_state.num_cells = new_num_cells
-        # Reset configuration for new cell count
-        st.session_state.cells_config = {}
-        st.rerun()
-    
-    st.markdown("---")
-    
-    # Cell Configuration
-    st.markdown("## 📱 Cell Setup")
-    
-    for i in range(st.session_state.num_cells):
-        cell_id = f"Cell_{i+1}"
-        
-        with st.expander(f"🔋 {cell_id}", expanded=i == 0):
-            # Cell type
-            cell_type = st.selectbox(
-                "Cell Type",
-                ["LFP", "NMC"],
-                key=f"cell_type_{i}"
-            )
-            
-            # Initialize cell config
-            if cell_id not in st.session_state.cells_config:
-                st.session_state.cells_config[cell_id] = {
-                    "type": cell_type,
-                    "tasks": []
-                }
-            else:
-                st.session_state.cells_config[cell_id]["type"] = cell_type
-            
-            # Task configuration
-            st.markdown("**Task Sequence:**")
-            
-            # Add new task
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                task_type = st.selectbox(
-                    "Task Type",
-                    ["CC Charging", "Discharging", "Idle"],
-                    key=f"task_type_{i}"
-                )
-            with col2:
-                duration = st.number_input(
-                    "Duration (s)",
-                    min_value=1,
-                    max_value=3600,
-                    value=30,
-                    key=f"duration_{i}"
-                )
-            
-            if st.button(f"➕ Add Task", key=f"add_task_{i}"):
-                st.session_state.cells_config[cell_id]["tasks"].append({
-                    "type": task_type,
-                    "duration": duration
-                })
-                st.rerun()
-            
-            # Display current tasks
-            tasks = st.session_state.cells_config[cell_id].get("tasks", [])
-            if tasks:
-                st.markdown("**Current Tasks:**")
-                for idx, task in enumerate(tasks):
-                    col1, col2, col3 = st.columns([2, 1, 1])
-                    with col1:
-                        task_color = {
-                            "CC Charging": "🟢",
-                            "Discharging": "🔴", 
-                            "Idle": "🟡"
-                        }.get(task["type"], "⚪")
-                        st.write(f"{task_color} {task['type']}")
-                    with col2:
-                        st.write(f"{task['duration']}s")
-                    with col3:
-                        if st.button("🗑️", key=f"delete_task_{i}_{idx}"):
-                            st.session_state.cells_config[cell_id]["tasks"].pop(idx)
-                            st.rerun()
-    
-    st.markdown("---")
-    
-    # Control buttons
-    st.markdown("## 🎮 Controls")
-    
-    # Check if all cells have tasks
-    all_configured = all(
-        st.session_state.cells_config.get(f"Cell_{i+1}", {}).get("tasks", [])
-        for i in range(st.session_state.num_cells)
-    )
-    
-    if not st.session_state.simulation_running:
-        if st.button("🚀 Start Testing", type="primary", disabled=not all_configured):
-            if all_configured:
-                st.session_state.simulation_running = True
-                st.session_state.simulation_paused = False
-                st.session_state.simulation_data = pd.DataFrame()
-                st.session_state.cell_states = {}
-                
-                # Start simulation in thread
-                thread = threading.Thread(target=simulate_cells)
-                thread.daemon = True
-                thread.start()
-                st.rerun()
+    if cell_id not in st.session_state.cells_data:
+        st.session_state.cells_data[cell_id] = initialize_cell(cell_type, cell_id)
     else:
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.session_state.simulation_paused:
-                if st.button("▶️ Resume"):
-                    st.session_state.simulation_paused = False
-                    st.rerun()
-            else:
-                if st.button("⏸️ Pause"):
-                    st.session_state.simulation_paused = True
-                    st.rerun()
-        
-        with col2:
-            if st.button("⏹️ Stop"):
-                st.session_state.simulation_running = False
-                st.session_state.simulation_paused = False
-                st.rerun()
-    
-    if not all_configured:
-        st.warning("⚠️ Configure tasks for all cells before starting")
+        st.session_state.cells_data[cell_id]["type"] = cell_type
 
-# Main Content Area
-if st.session_state.simulation_running or not st.session_state.simulation_data.empty:
-    
-    # Real-time status
-    st.markdown("## 📊 Real-time Status")
-    
-    if st.session_state.cell_states:
-        cols = st.columns(min(len(st.session_state.cell_states), 4))
-        for idx, (cell_id, state) in enumerate(st.session_state.cell_states.items()):
-            with cols[idx % 4]:
-                status_class = "status-running" if not state["completed"] else "status-stopped"
-                st.markdown(f"""
-                <div class="metric-container">
-                    <h4>{cell_id}</h4>
-                    <p class="{status_class}">{state["task"]}</p>
-                    <p>Progress: {state["task_progress"]}</p>
-                    <p>⚡ {state["voltage"]:.3f}V</p>
-                    <p>🔋 {state["current"]:.3f}A</p>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    # Graphs
-    if not st.session_state.simulation_data.empty:
-        st.markdown("## 📈 Live Data Visualization")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Voltage vs Time
-            fig_voltage = px.line(
-                st.session_state.simulation_data,
-                x="Time",
-                y="Voltage",
-                color="Cell_ID",
-                title="Voltage vs Time",
-                labels={"Time": "Time (seconds)", "Voltage": "Voltage (V)"}
-            )
-            fig_voltage.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font_color='white',
-                title_font_size=16
-            )
-            st.plotly_chart(fig_voltage, use_container_width=True)
-        
-        with col2:
-            # Current vs Time
-            fig_current = px.line(
-                st.session_state.simulation_data,
-                x="Time",
-                y="Current",
-                color="Cell_ID",
-                title="Current vs Time",
-                labels={"Time": "Time (seconds)", "Current": "Current (A)"}
-            )
-            fig_current.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font_color='white',
-                title_font_size=16
-            )
-            st.plotly_chart(fig_current, use_container_width=True)
-        
-        # Data table
-        st.markdown("## 📋 Recent Data")
-        if len(st.session_state.simulation_data) > 0:
-            recent_data = st.session_state.simulation_data.tail(20)
-            st.dataframe(recent_data, use_container_width=True)
-        
-        # Export option
-        if st.button("📥 Export Data to CSV"):
-            if not st.session_state.simulation_data.empty:
-                csv_data = st.session_state.simulation_data.to_csv(index=False)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                st.download_button(
-                    label="Download CSV",
-                    data=csv_data,
-                    file_name=f"battery_test_data_{timestamp}.csv",
-                    mime="text/csv"
-                )
+st.sidebar.markdown("---")
 
-else:
-    # Welcome screen
-    st.markdown("""
-    <div style="text-align: center; padding: 4rem 2rem;">
-        <h2 style="color: #64b5f6; margin-bottom: 2rem;">Welcome to Battery Testing Bench</h2>
-        <div style="background: linear-gradient(145deg, #2a2a2a, #1e1e1e); padding: 2rem; border-radius: 16px; border: 1px solid #3d3d3d;">
-            <h3 style="color: #42a5f5;">Getting Started:</h3>
-            <div style="text-align: left; max-width: 600px; margin: 0 auto;">
-                <p>🔧 <strong>Step 1:</strong> Configure the number of cells in the sidebar</p>
-                <p>📱 <strong>Step 2:</strong> Set up each cell type (LFP or NMC)</p>
-                <p>⚙️ <strong>Step 3:</strong> Add task sequences for each cell</p>
-                <p>🚀 <strong>Step 4:</strong> Click "Start Testing" to begin simulation</p>
-            </div>
-            <div style="margin-top: 2rem;">
-                <p style="color: #b0bec5;"><strong>Features:</strong></p>
-                <p>• Real-time voltage and current monitoring</p>
-                <p>• Parallel cell simulation</p>
-                <p>• Live data visualization</p>
-                <p>• CSV data export</p>
-            </div>
-        </div>
+# Task Configuration
+st.sidebar.subheader("Task Configuration")
+
+for cell_id in list(st.session_state.cells_data.keys())[:num_cells]:
+    with st.sidebar.expander(f"Tasks for {cell_id.upper()}"):
+        task_type = st.selectbox(
+            "Task Type", 
+            ["IDLE", "CC_CV", "CC_CD"], 
+            key=f"task_type_{cell_id}"
+        )
+        
+        task_data = {"task_type": task_type}
+        
+        if task_type == "CC_CV":
+            st.markdown("**CC_CV Parameters:**")
+            cc_value = st.number_input("CC Current (A)", value=1.0, key=f"cc_{cell_id}")
+            cv_voltage = st.number_input("CV Voltage (V)", value=3.6, key=f"cv_{cell_id}")
+            capacity = st.number_input("Capacity (Ah)", value=10.0, key=f"cap_{cell_id}")
+            duration = st.number_input("Duration (seconds)", value=300, key=f"dur_{cell_id}")
+            
+            task_data.update({
+                "current": cc_value,
+                "cv_voltage": cv_voltage,
+                "capacity": capacity,
+                "duration": duration
+            })
+        
+        elif task_type == "CC_CD":
+            st.markdown("**CC_CD Parameters:**")
+            cc_value = st.number_input("CC Current (A)", value=1.0, key=f"ccd_cc_{cell_id}")
+            cd_voltage = st.number_input("CD Voltage (V)", value=2.8, key=f"ccd_cv_{cell_id}")
+            capacity = st.number_input("Capacity (Ah)", value=10.0, key=f"ccd_cap_{cell_id}")
+            duration = st.number_input("Duration (seconds)", value=300, key=f"ccd_dur_{cell_id}")
+            
+            task_data.update({
+                "current": cc_value,
+                "voltage": cd_voltage,
+                "capacity": capacity,
+                "duration": duration
+            })
+        
+        elif task_type == "IDLE":
+            duration = st.number_input("Duration (seconds)", value=60, key=f"idle_dur_{cell_id}")
+            task_data["duration"] = duration
+        
+        st.session_state.tasks_data[cell_id] = task_data
+
+st.sidebar.markdown("---")
+
+# Control Buttons
+col1, col2 = st.sidebar.columns(2)
+
+with col1:
+    if st.button("▶️ Start", use_container_width=True):
+        st.session_state.simulation_running = True
+        st.session_state.current_time = 0
+        st.session_state.simulation_data = pd.DataFrame()
+
+with col2:
+    if st.button("⏹️ Stop", use_container_width=True):
+        st.session_state.simulation_running = False
+
+# Export button
+if not st.session_state.simulation_data.empty:
+    csv = st.session_state.simulation_data.to_csv(index=False)
+    st.sidebar.download_button(
+        label="📥 Export CSV",
+        data=csv,
+        file_name=f"cell_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+# Main Area
+st.title("🔋 Battery Cell Testing Simulator")
+
+# Create columns for layout
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    # Real-time Cell Overview Table
+    st.subheader("📊 Live Cell Status")
+    
+    if st.session_state.cells_data:
+        # Create DataFrame for display
+        display_data = []
+        for cell_id in list(st.session_state.cells_data.keys())[:num_cells]:
+            cell = st.session_state.cells_data[cell_id]
+            display_data.append({
+                "Cell ID": cell_id.upper(),
+                "Type": cell["type"],
+                "Voltage (V)": f"{cell['voltage']:.2f}",
+                "Current (A)": f"{cell['current']:.2f}",
+                "Temp (°C)": f"{cell['temp']:.1f}",
+                "Capacity (Wh)": f"{cell['capacity']:.2f}",
+                "Current Task": cell["current_task"]
+            })
+        
+        df_display = pd.DataFrame(display_data)
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+with col2:
+    # Simulation Status
+    st.subheader("🎛️ Simulation Status")
+    
+    status_color = "🟢" if st.session_state.simulation_running else "🔴"
+    status_text = "RUNNING" if st.session_state.simulation_running else "STOPPED"
+    
+    st.markdown(f"""
+    <div class="metric-card">
+        <h3>{status_color} {status_text}</h3>
+        <p>Time: {st.session_state.current_time}s</p>
+        <p>Active Cells: {num_cells}</p>
     </div>
     """, unsafe_allow_html=True)
 
-# Auto-refresh during simulation
+# Live Graphs
+st.subheader("📈 Live Monitoring")
+
+if not st.session_state.simulation_data.empty:
+    # Create subplots
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=('Voltage vs Time', 'Current vs Time', 'Temperature vs Time', 'Capacity vs Time'),
+        vertical_spacing=0.12
+    )
+    
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
+    
+    for i, cell_id in enumerate(list(st.session_state.cells_data.keys())[:num_cells]):
+        cell_data = st.session_state.simulation_data[
+            st.session_state.simulation_data['Cell_ID'] == cell_id
+        ]
+        
+        if not cell_data.empty:
+            color = colors[i % len(colors)]
+            
+            # Voltage
+            fig.add_trace(
+                go.Scatter(x=cell_data['Time'], y=cell_data['Voltage'], 
+                          name=f'{cell_id} Voltage', line=dict(color=color)),
+                row=1, col=1
+            )
+            
+            # Current
+            fig.add_trace(
+                go.Scatter(x=cell_data['Time'], y=cell_data['Current'], 
+                          name=f'{cell_id} Current', line=dict(color=color), showlegend=False),
+                row=1, col=2
+            )
+            
+            # Temperature
+            fig.add_trace(
+                go.Scatter(x=cell_data['Time'], y=cell_data['Temperature'], 
+                          name=f'{cell_id} Temp', line=dict(color=color), showlegend=False),
+                row=2, col=1
+            )
+            
+            # Capacity
+            fig.add_trace(
+                go.Scatter(x=cell_data['Time'], y=cell_data['Capacity'], 
+                          name=f'{cell_id} Capacity', line=dict(color=color), showlegend=False),
+                row=2, col=2
+            )
+    
+    fig.update_layout(
+        height=600,
+        showlegend=True,
+        template="plotly_dark",
+        title_text="Real-time Cell Monitoring Dashboard"
+    )
+    
+    # Update axis labels
+    fig.update_xaxes(title_text="Time (s)")
+    fig.update_yaxes(title_text="Voltage (V)", row=1, col=1)
+    fig.update_yaxes(title_text="Current (A)", row=1, col=2)
+    fig.update_yaxes(title_text="Temperature (°C)", row=2, col=1)
+    fig.update_yaxes(title_text="Capacity (Wh)", row=2, col=2)
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+# Analysis Section
+if not st.session_state.simulation_data.empty and not st.session_state.simulation_running:
+    st.subheader("📋 Test Analysis")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**Voltage Analysis**")
+        voltage_stats = st.session_state.simulation_data.groupby('Cell_ID')['Voltage'].agg(['min', 'max', 'mean'])
+        st.dataframe(voltage_stats.round(3))
+    
+    with col2:
+        st.markdown("**Current Analysis**")
+        current_stats = st.session_state.simulation_data.groupby('Cell_ID')['Current'].agg(['min', 'max', 'mean'])
+        st.dataframe(current_stats.round(3))
+    
+    with col3:
+        st.markdown("**Temperature Analysis**")
+        temp_stats = st.session_state.simulation_data.groupby('Cell_ID')['Temperature'].agg(['min', 'max', 'mean'])
+        st.dataframe(temp_stats.round(1))
+
+# Simulation Loop
 if st.session_state.simulation_running:
+    placeholder = st.empty()
+    
+    # Simulate one time step
+    st.session_state.current_time += 1
+    
+    # Update each cell
+    new_data = []
+    for cell_id in list(st.session_state.cells_data.keys())[:num_cells]:
+        task_data = st.session_state.tasks_data.get(cell_id, {})
+        
+        # Simulate cell step
+        st.session_state.cells_data[cell_id] = simulate_cell_step(
+            st.session_state.cells_data[cell_id], task_data, st.session_state.current_time
+        )
+        
+        # Record data
+        cell = st.session_state.cells_data[cell_id]
+        new_data.append({
+            'Time': st.session_state.current_time,
+            'Cell_ID': cell_id,
+            'Type': cell['type'],
+            'Voltage': cell['voltage'],
+            'Current': cell['current'],
+            'Temperature': cell['temp'],
+            'Capacity': cell['capacity'],
+            'Task': cell['current_task']
+        })
+    
+    # Add to simulation data
+    new_df = pd.DataFrame(new_data)
+    st.session_state.simulation_data = pd.concat([st.session_state.simulation_data, new_df], ignore_index=True)
+    
+    # Auto-refresh every second
     time.sleep(1)
     st.rerun()
+
+# Footer
+st.markdown("---")
+st.markdown("**🔋 Battery Cell Testing Simulator** - Real-time monitoring and analysis platform")
