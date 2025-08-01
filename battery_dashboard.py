@@ -14,7 +14,7 @@ import threading
 # Page configuration
 st.set_page_config(
     page_title="Battery Cell Management System",
-    
+    page_icon="🔋",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -82,6 +82,10 @@ def initialize_session_state():
         st.session_state.start_time = None
     if 'current_time' not in st.session_state:
         st.session_state.current_time = 0
+    if 'total_simulation_time' not in st.session_state:
+        st.session_state.total_simulation_time = 0
+    if 'simulation_completed' not in st.session_state:
+        st.session_state.simulation_completed = False
 
 # Cell management functions
 def randomize_cell_data(cell_type):
@@ -146,7 +150,7 @@ def simulate_task_execution(cell_key, task_data, elapsed_time):
 def main():
     initialize_session_state()
     
-    st.markdown('<h1 class="main-header">Battery Cell Management System</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">🔋 Battery Cell Management System</h1>', unsafe_allow_html=True)
     
     # Sidebar navigation
     with st.sidebar:
@@ -421,6 +425,53 @@ def simulation_tab():
         st.warning("Please add tasks to cells before starting simulation.")
         return
     
+    # Calculate total simulation time
+    total_time = 0
+    for cell_key, tasks in st.session_state.tasks_data.items():
+        if tasks:
+            cell_total_time = sum(task['time_seconds'] for task in tasks)
+            total_time = max(total_time, cell_total_time)
+    
+    st.session_state.total_simulation_time = total_time
+    
+    # Display simulation info
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Simulation Time", f"{total_time}s")
+    
+    with col2:
+        if st.session_state.simulation_running and st.session_state.start_time:
+            elapsed = time.time() - st.session_state.start_time
+            remaining = max(0, total_time - elapsed)
+            st.metric("Time Remaining", f"{remaining:.1f}s")
+        else:
+            st.metric("Time Remaining", f"{total_time}s")
+    
+    with col3:
+        if st.session_state.simulation_running and st.session_state.start_time:
+            elapsed = time.time() - st.session_state.start_time
+            progress = min(elapsed / total_time * 100, 100) if total_time > 0 else 0
+            st.metric("Progress", f"{progress:.1f}%")
+        else:
+            st.metric("Progress", "0%")
+    
+    with col4:
+        if st.session_state.simulation_completed:
+            st.metric("Status", "✅ Completed")
+        elif st.session_state.simulation_running:
+            st.metric("Status", "🔄 Running")
+        else:
+            st.metric("Status", "⏸️ Stopped")
+    
+    # Progress bar
+    if st.session_state.simulation_running and st.session_state.start_time:
+        elapsed = time.time() - st.session_state.start_time
+        progress = min(elapsed / total_time, 1.0) if total_time > 0 else 0
+        st.progress(progress)
+    else:
+        st.progress(0)
+    
     # Control buttons
     col1, col2, col3 = st.columns(3)
     
@@ -429,11 +480,13 @@ def simulation_tab():
             st.session_state.simulation_running = True
             st.session_state.start_time = time.time()
             st.session_state.simulation_data = []
+            st.session_state.simulation_completed = False
             st.rerun()
     
     with col2:
         if st.button("Stop Simulation", disabled=not st.session_state.simulation_running):
             st.session_state.simulation_running = False
+            st.session_state.simulation_completed = False
             st.rerun()
     
     with col3:
@@ -441,6 +494,7 @@ def simulation_tab():
             st.session_state.simulation_data = []
             st.session_state.simulation_running = False
             st.session_state.start_time = None
+            st.session_state.simulation_completed = False
             st.rerun()
     
     # Real-time display
@@ -454,25 +508,51 @@ def simulation_tab():
         current_time = time.time()
         elapsed = current_time - st.session_state.start_time if st.session_state.start_time else 0
         
+        # Check if simulation should stop automatically
+        if elapsed >= total_time:
+            st.session_state.simulation_running = False
+            st.session_state.simulation_completed = True
+            st.success("🎉 Simulation completed successfully!")
+            st.rerun()
+        
         # Update cell data based on current tasks
         updated_cells = {}
+        active_cells = 0
+        
         for cell_key, tasks in st.session_state.tasks_data.items():
             if tasks and cell_key in st.session_state.cells_data:
                 # Find current task based on elapsed time
                 cumulative_time = 0
                 current_task = None
+                task_elapsed = 0
+                task_index = -1
                 
-                for task in tasks:
+                for i, task in enumerate(tasks):
                     if elapsed >= cumulative_time and elapsed < cumulative_time + task['time_seconds']:
                         current_task = task
                         task_elapsed = elapsed - cumulative_time
+                        task_index = i
+                        active_cells += 1
                         break
                     cumulative_time += task['time_seconds']
                 
                 if current_task:
                     updated_cell_data = simulate_task_execution(cell_key, current_task, task_elapsed)
-                    updated_cells[cell_key] = updated_cell_data
+                    updated_cells[cell_key] = {
+                        **updated_cell_data,
+                        'current_task': current_task['task_type'],
+                        'task_index': task_index + 1,
+                        'task_progress': (task_elapsed / current_task['time_seconds']) * 100
+                    }
                     st.session_state.cells_data[cell_key] = updated_cell_data
+                else:
+                    # Cell has finished all tasks
+                    updated_cells[cell_key] = {
+                        **st.session_state.cells_data[cell_key],
+                        'current_task': 'COMPLETED',
+                        'task_index': len(tasks),
+                        'task_progress': 100
+                    }
         
         # Store simulation data
         if updated_cells:
@@ -480,13 +560,16 @@ def simulation_tab():
                 'timestamp': current_time,
                 'elapsed': elapsed,
                 **{f"{cell_key}_{param}": value for cell_key, cell_data in updated_cells.items() 
-                   for param, value in cell_data.items() if isinstance(value, (int, float))}
+                   for param, value in cell_data.items() if isinstance(value, (int, float)) and not param.startswith('task')}
             }
             st.session_state.simulation_data.append(data_point)
         
         # Update displays
         with status_placeholder:
-            st.success(f"Simulation Running - Elapsed: {elapsed:.1f}s")
+            if active_cells > 0:
+                st.info(f"⚡ Simulation Running - {active_cells} active cells - Elapsed: {elapsed:.1f}s / {total_time}s")
+            else:
+                st.warning(f"⏳ All cells completed - Elapsed: {elapsed:.1f}s / {total_time}s")
         
         with metrics_placeholder:
             if updated_cells:
@@ -494,9 +577,26 @@ def simulation_tab():
                 for i, (cell_key, cell_data) in enumerate(updated_cells.items()):
                     with cols[i]:
                         st.markdown(f"**{cell_key}**")
-                        st.metric("Voltage", f"{cell_data['voltage']:.3f}V")
-                        st.metric("Current", f"{cell_data['current']:.3f}A")
-                        st.metric("Temp", f"{cell_data['temp']:.1f}°C")
+                        
+                        # Current task info
+                        task_status = cell_data.get('current_task', 'IDLE')
+                        task_num = cell_data.get('task_index', 0)
+                        task_progress = cell_data.get('task_progress', 0)
+                        
+                        if task_status == 'COMPLETED':
+                            st.success(f"✅ All Tasks Done")
+                        else:
+                            st.info(f"🔄 Task {task_num}: {task_status}")
+                            st.progress(task_progress / 100)
+                        
+                        # Cell metrics
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.metric("Voltage", f"{cell_data['voltage']:.3f}V")
+                            st.metric("Current", f"{cell_data['current']:.3f}A")
+                        with col_b:
+                            st.metric("Temp", f"{cell_data['temp']:.1f}°C")
+                            st.metric("Capacity", f"{cell_data['capacity']:.3f}Wh")
         
         # Real-time chart
         with chart_placeholder:
@@ -511,36 +611,44 @@ def simulation_tab():
                 
                 colors = px.colors.qualitative.Set1
                 
-                for i, cell_key in enumerate(updated_cells.keys()):
+                for i, cell_key in enumerate([k for k in updated_cells.keys()]):
                     color = colors[i % len(colors)]
                     
                     # Voltage
-                    fig.add_trace(
-                        go.Scatter(x=df['elapsed'], y=df[f'{cell_key}_voltage'], 
-                                 name=f'{cell_key} Voltage', line=dict(color=color)),
-                        row=1, col=1
-                    )
+                    voltage_col = f'{cell_key}_voltage'
+                    if voltage_col in df.columns:
+                        fig.add_trace(
+                            go.Scatter(x=df['elapsed'], y=df[voltage_col], 
+                                     name=f'{cell_key} Voltage', line=dict(color=color)),
+                            row=1, col=1
+                        )
                     
                     # Current
-                    fig.add_trace(
-                        go.Scatter(x=df['elapsed'], y=df[f'{cell_key}_current'], 
-                                 name=f'{cell_key} Current', line=dict(color=color)),
-                        row=1, col=2
-                    )
+                    current_col = f'{cell_key}_current'
+                    if current_col in df.columns:
+                        fig.add_trace(
+                            go.Scatter(x=df['elapsed'], y=df[current_col], 
+                                     name=f'{cell_key} Current', line=dict(color=color)),
+                            row=1, col=2
+                        )
                     
                     # Temperature
-                    fig.add_trace(
-                        go.Scatter(x=df['elapsed'], y=df[f'{cell_key}_temp'], 
-                                 name=f'{cell_key} Temp', line=dict(color=color)),
-                        row=2, col=1
-                    )
+                    temp_col = f'{cell_key}_temp'
+                    if temp_col in df.columns:
+                        fig.add_trace(
+                            go.Scatter(x=df['elapsed'], y=df[temp_col], 
+                                     name=f'{cell_key} Temp', line=dict(color=color)),
+                            row=2, col=1
+                        )
                     
                     # Capacity
-                    fig.add_trace(
-                        go.Scatter(x=df['elapsed'], y=df[f'{cell_key}_capacity'], 
-                                 name=f'{cell_key} Capacity', line=dict(color=color)),
-                        row=2, col=2
-                    )
+                    capacity_col = f'{cell_key}_capacity'
+                    if capacity_col in df.columns:
+                        fig.add_trace(
+                            go.Scatter(x=df['elapsed'], y=df[capacity_col], 
+                                     name=f'{cell_key} Capacity', line=dict(color=color)),
+                            row=2, col=2
+                        )
                 
                 fig.update_layout(height=600, showlegend=False, title_text="Real-time Cell Parameters")
                 fig.update_xaxes(title_text="Time (s)")
@@ -555,8 +663,27 @@ def simulation_tab():
         time.sleep(1)
         st.rerun()
     
+    elif st.session_state.simulation_completed:
+        st.success("🎉 Simulation completed successfully!")
+        st.info(f"Total simulation time: {total_time}s")
+        
+        if st.session_state.simulation_data:
+            st.info(f"Collected {len(st.session_state.simulation_data)} data points. Go to 'Data Analysis' tab to view results.")
+    
     else:
         st.info("Click 'Start Simulation' to begin real-time monitoring.")
+        
+        # Show task summary when not running
+        st.subheader("Simulation Overview")
+        for cell_key, tasks in st.session_state.tasks_data.items():
+            if tasks:
+                with st.expander(f"{cell_key} - {len(tasks)} tasks ({sum(task['time_seconds'] for task in tasks)}s total)"):
+                    for i, task in enumerate(tasks):
+                        st.markdown(f"**Task {i+1}**: {task['task_type']} - {task['time_seconds']}s")
+                        if task['task_type'] == 'CC_CV':
+                            st.markdown(f"  - CC: {task.get('cc_cp', 'N/A')}, CV: {task.get('cv_voltage', 0):.2f}V")
+                        elif task['task_type'] == 'CC_CD':
+                            st.markdown(f"  - CC: {task.get('cc_cp', 'N/A')}, Cutoff: {task.get('voltage', 0):.2f}V")
 
 def analysis_tab():
     st.header("Data Analysis")
